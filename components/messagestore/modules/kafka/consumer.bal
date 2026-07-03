@@ -115,11 +115,9 @@ isolated client class Consumer {
     }
 
     isolated remote function reconnect() returns error? {
-        lock {
-            error? _closeResult = self.consumer->close(self.config.gracefulClosePeriod);
-            if _closeResult is error {
-                log:printWarn("Error while closing Kafka consumer during reconnect", 'error = _closeResult);
-            }
+        error? _closeResult = self->close();
+        if _closeResult is error {
+            log:printWarn("Error while closing Kafka consumer during reconnect", 'error = _closeResult);
         }
         kafka:Consumer _consumer = check createKafkaConsumer(self.kafkaConfig, self.consumerGroupId,
                                                                self.kafkaTopic, self.partitions);
