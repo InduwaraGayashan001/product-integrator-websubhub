@@ -20,8 +20,15 @@ import websubhub.config;
 import ballerina/websubhub;
 
 import wso2/messagestore.api as storeapi;
+import ballerina/log;
 
 isolated function validateRetryConfig() returns error? {
+    if config:delivery.reconnectInterval < 0.0d {
+        log:printWarn("Reconnect interval should be greater than or equal to 0. Hence falling back to default value of 1 second");
+    } else if config:delivery.reconnectInterval == 0.0d {
+        log:printWarn("delivery configuration: reconnectInterval is set to 0, which may cause continuous reconnection attempts");
+    }
+
     var retryConfig = config:delivery.'retry;
     if retryConfig is () {
         return;
@@ -47,6 +54,10 @@ isolated function validateRetryConfig() returns error? {
     if hasHttpRetry && hasMessageStoreRetry {
         return error("invalid retry configuration: HTTP retry configurations and message-store retry configurations cannot be used together");
     }
+}
+
+isolated function getReconnectInterval() returns decimal {
+    return config:delivery.reconnectInterval < 0.0d ? 1.0d : config:delivery.reconnectInterval;
 }
 
 isolated function getRetryConfig() returns common:HttpRetryConfig|common:MessageStoreRetryConfig? {
