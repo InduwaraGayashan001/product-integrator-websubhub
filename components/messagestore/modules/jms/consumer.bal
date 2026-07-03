@@ -135,17 +135,17 @@ isolated client class Consumer {
 
     isolated remote function reconnect() returns error? {
         lock {
-            error? consumerCloseErr = self.consumer->close();
-            if consumerCloseErr is error {
-                log:printWarn("Error while closing JMS consumer during reconnect", 'error = consumerCloseErr);
+            error? _closeResult = self.consumer->close();
+            if _closeResult is error {
+                log:printWarn("Error while closing JMS consumer during reconnect", 'error = _closeResult);
             }
-            error? sessionCloseErr = self.session->close();
-            if sessionCloseErr is error {
-                log:printWarn("Error while closing JMS session during reconnect", 'error = sessionCloseErr);
+            _closeResult = self.session->close();
+            if _closeResult is error {
+                log:printWarn("Error while closing JMS session during reconnect", 'error = _closeResult);
             }
-            error? connectionCloseErr = self.connection->close();
-            if connectionCloseErr is error {
-                log:printWarn("Error while closing JMS connection during reconnect", 'error = connectionCloseErr);
+            _closeResult = self.connection->close();
+            if _closeResult is error {
+                log:printWarn("Error while closing JMS connection during reconnect", 'error = _closeResult);
             }
         }
         jms:Connection|error connectionResult = new (self.connectionConfig);
@@ -155,9 +155,9 @@ isolated client class Consumer {
         }
         jms:Session|error sessionResult = connectionResult->createSession(jms:SESSION_TRANSACTED);
         if sessionResult is error {
-            error? closeResult = connectionResult->close();
-            if closeResult is error {
-                log:printWarn("Error while closing JMS connection after consumer reconnect failure", 'error = closeResult);
+            error? _closeResult = connectionResult->close();
+            if _closeResult is error {
+                log:printWarn("Error while closing JMS connection after consumer reconnect failure", 'error = _closeResult);
             }
             log:printWarn("Error while creating JMS session during consumer reconnect", 'error = sessionResult);
             return sessionResult;
@@ -168,9 +168,9 @@ isolated client class Consumer {
             subscriberName: self.subscriberName
         });
         if consumerResult is error {
-            error? closeResult = connectionResult->close();
-            if closeResult is error {
-                log:printWarn("Error while closing JMS connection after consumer reconnect failure", 'error = closeResult);
+            error? _closeResult = connectionResult->close();
+            if _closeResult is error {
+                log:printWarn("Error while closing JMS connection after consumer reconnect failure", 'error = _closeResult);
             }
             log:printWarn("Error while creating JMS message consumer during reconnect", 'error = consumerResult);
             return consumerResult;

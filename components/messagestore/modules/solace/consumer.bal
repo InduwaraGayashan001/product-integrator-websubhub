@@ -107,9 +107,9 @@ isolated client class Consumer {
 
     isolated remote function reconnect() returns error? {
         lock {
-            error? closeErr = self.consumer->close();
-            if closeErr is error {
-                log:printWarn("Error while closing Solace consumer during reconnect", 'error = closeErr);
+            error? _closeResult = self.consumer->close();
+            if _closeResult is error {
+                log:printWarn("Error while closing Solace consumer during reconnect", 'error = _closeResult);
             }
         }
         solace:MessageConsumer _consumer = check new (self.url, self.solaceConsumerConfig);

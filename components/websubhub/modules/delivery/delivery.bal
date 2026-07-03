@@ -16,7 +16,6 @@
 
 import websubhub.admin;
 import websubhub.common;
-import websubhub.config;
 import websubhub.connections as conn;
 import websubhub.persistence as persist;
 import websubhub.state;
@@ -62,7 +61,7 @@ isolated function startDispatchTask(websubhub:VerifiedSubscription subscription)
                 if reconnectErr is error {
                     common:logRecoverableError("Error occurred while reconnecting the message store consumer", reconnectErr,
                         topic = topic, callback = subscription.hubCallback, subscriberId = subscriberId, consumerMetadata = consumerMetadata);
-                    runtime:sleep(config:delivery.reconnectInterval);
+                    runtime:sleep(getReconnectInterval());
                     continue;
                 }
                 continue;
