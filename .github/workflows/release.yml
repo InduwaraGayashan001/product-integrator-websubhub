@@ -110,12 +110,15 @@ jobs:
           - "components/websubhub/target/bin"
           - "components/websubhub-consolidator/target/bin"
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+
       - name: Download build output
         uses: actions/download-artifact@v8
         with:
           name: build-output
           path: components
-      
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         env:
