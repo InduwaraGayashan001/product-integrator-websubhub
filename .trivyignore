@@ -1,1 +1,2 @@
-CVE-2026-42577
+# jackson-databind (via ballerinax/confluent.cregistry) CVE fixed only in 2.18.9/2.21.5/2.22.1, none of which FasterXML has published to Maven Central yet (remove once a fixed version is released and the dependency is bumped)
+CVE-2026-54515
