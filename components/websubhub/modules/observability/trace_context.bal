@@ -30,7 +30,8 @@ const string RECEIVE_SRC_MODULE = "wso2/messagestore.solace";
 const string RECEIVE_SRC_OBJECT = "xlibb/solace/MessageConsumer";
 const string RECEIVE_SRC_FUNCTION = "receive";
 
-final readonly & string[] TRACE_CONTEXT_FIELDS = ["traceparent", "tracestate"];
+const string TRACEPARENT_FIELD = "traceparent";
+const string TRACESTATE_FIELD = "tracestate";
 
 # An open delivery span, together with the observer context it displaced.
 #
@@ -42,11 +43,6 @@ public type ConsumeSpan record {|
 |};
 
 # Opens the delivery span, and contains any failure in doing so.
-#
-# This sits on the message-delivery path: it runs after a message has been consumed but before it has
-# been delivered, so a fault escaping here would fail the delivery and lose the message. Everything
-# below reaches into runtime internals through interop, where a runtime upgrade can turn a working
-# binding into a runtime panic - so the whole thing is trapped. Tracing must never affect delivery.
 #
 # + message - The message about to be delivered
 # + receiveDuration - How long the `receive` that produced this message took
@@ -61,9 +57,6 @@ public isolated function startConsumeSpan(storeapi:Message message, decimal rece
 }
 
 # Finishes the delivery span, and contains any failure in doing so.
-#
-# A failure here would otherwise leave the span open and the displaced observer context installed, so
-# it also restores the ambient context on the way out - see `closeConsumeSpan`.
 #
 # + span - The value returned by `startConsumeSpan`, or `()` when no span was started
 # + err - The delivery failure to record on the span, or `()` when the delivery succeeded
@@ -81,16 +74,11 @@ public isolated function finishConsumeSpan(ConsumeSpan? span, error? err = ()) {
     }
 }
 
-# Reports a tracing fault. Logged every time rather than once: delivery keeps working, so repeated
-# warnings are the only signal that the trace has quietly stopped joining up.
-#
-# + message - What failed
-# + err - The underlying failure
 isolated function logTracingFailure(string message, error err) {
     log:printWarn(message, 'error = err);
 }
 
-isolated function openConsumeSpan(storeapi:Message message, decimal receiveDuration) returns ConsumeSpan? {
+isolated function openConsumeSpan(storeapi:Message message, decimal receiveDuration) returns ConsumeSpan?|error {
     map<string> traceContext = extractTraceContext(message);
     if traceContext.length() == 0 {
         return;
@@ -110,7 +98,15 @@ isolated function openConsumeSpan(storeapi:Message message, decimal receiveDurat
     }
     addReceiveTags(context, previous, message, receiveDuration);
     setObserverContext(context);
-    startObservation(context, true);
+    error? started = trap startObservation(context, true);
+    if started is error {
+        error? restored = trap setObserverContext(previous);
+        if restored is error {
+            logTracingFailure("Failed to restore the observer context after failing to open the delivery span",
+                    restored);
+        }
+        return started;
+    }
     return {context, previous};
 }
 
@@ -144,29 +140,34 @@ isolated function addReceiveTags(handle context, handle previous, storeapi:Messa
 }
 
 isolated function tagPollingTrace(handle context, handle previous) {
-    string? traceParent = java:toString(mapGet(getContextProperties(previous), java:fromString("traceparent")));
+    string? traceParent = java:toString(mapGet(getContextProperties(previous), java:fromString(TRACEPARENT_FIELD)));
     if traceParent is string && traceParent.length() >= 35 {
         addTag(context, java:fromString(POLLING_TRACE_TAG), java:fromString(traceParent.substring(3, 35)));
     }
 }
 isolated function closeConsumeSpan(ConsumeSpan span, error? err) {
     if err is error {
-        reportError(err);
+        error? reported = trap reportError(err);
+        if reported is error {
+            logTracingFailure("Failed to record the delivery failure on the delivery span", reported);
+        }
     }
     stopObservation(span.context);
 }
 
 isolated function extractTraceContext(storeapi:Message message) returns map<string> {
-    map<string> traceContext = {};
     map<string|string[]>? metadata = message.metadata;
     if metadata is () {
-        return traceContext;
+        return {};
     }
-    foreach string name in TRACE_CONTEXT_FIELDS {
-        string|string[]? value = metadata[name];
-        if value is string {
-            traceContext[name] = value;
-        }
+    string|string[]? traceParent = metadata[TRACEPARENT_FIELD];
+    if traceParent !is string {
+        return {};
+    }
+    map<string> traceContext = {[TRACEPARENT_FIELD]: traceParent};
+    string|string[]? traceState = metadata[TRACESTATE_FIELD];
+    if traceState is string {
+        traceContext[TRACESTATE_FIELD] = traceState;
     }
     return traceContext;
 }
