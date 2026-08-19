@@ -17,10 +17,12 @@
 import websubhub.admin;
 import websubhub.common;
 import websubhub.connections as conn;
+import websubhub.observability;
 import websubhub.persistence as persist;
 import websubhub.state;
 
 import ballerina/lang.runtime;
+import ballerina/time;
 import ballerina/websubhub;
 
 import wso2/messagestore.api as storeapi;
@@ -53,7 +55,9 @@ isolated function startDispatchTask(websubhub:VerifiedSubscription subscription)
                     string `Subscription or the topic is invalid`, topic = topic, subscriberId = subscriberId
                 );
             }
+            decimal receiveStart = time:monotonicNow();
             (storeapi:Message|error)? message = consumerEp->receive();
+            decimal receiveDuration = time:monotonicNow() - receiveStart;
             if message is error {
                 common:logRecoverableError("Error occurred while receiving message from the message store", message, 
                     topic = topic, callback = subscription.hubCallback, subscriberId = subscriberId, consumerMetadata = consumerMetadata); 
@@ -70,7 +74,10 @@ isolated function startDispatchTask(websubhub:VerifiedSubscription subscription)
                 continue;
             }
             messageId = message?.id;
-            check contentDispatcher->notifyContentDistribution(message);
+            observability:ConsumeSpan? consumeSpan = observability:startConsumeSpan(message, receiveDuration);
+            error? deliveryResult = contentDispatcher->notifyContentDistribution(message);
+            observability:finishConsumeSpan(consumeSpan, deliveryResult);
+            check deliveryResult;
         }
     } on fail var e {
         common:logContentDeliveryFailure("Error occurred while distributing content notification to the subscriber", 
