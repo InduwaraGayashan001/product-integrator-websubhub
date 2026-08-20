@@ -48,7 +48,7 @@ public type ConsumeSpan record {|
 # + receiveDuration - How long the `receive` that produced this message took
 # + return - The started span, or `()` if none was started or tracing failed
 public isolated function startConsumeSpan(storeapi:Message message, decimal receiveDuration) returns ConsumeSpan? {
-    ConsumeSpan?|error span = trap openConsumeSpan(message, receiveDuration);
+    ConsumeSpan|error? span = trap openConsumeSpan(message, receiveDuration);
     if span is error {
         logTracingFailure("Failed to open the delivery span in the publisher's trace", span);
         return;
