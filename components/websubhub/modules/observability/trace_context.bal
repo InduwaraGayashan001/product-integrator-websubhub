@@ -60,10 +60,7 @@ public isolated function finishConsumeSpan(ConsumeSpan? span, error? err = ()) {
     if span is () {
         return;
     }
-    error? closed = trap closeConsumeSpan(span, err);
-    if closed is error {
-        logTracingFailure("Failed to close the delivery span in the publisher's trace", closed);
-    }
+    closeConsumeSpan(span, err);
     error? restored = trap setObserverContext(span.previous);
     if restored is error {
         logTracingFailure("Failed to restore the observer context after delivery", restored);
@@ -137,7 +134,10 @@ isolated function closeConsumeSpan(ConsumeSpan span, error? err) {
             logTracingFailure("Failed to record the delivery failure on the delivery span", reported);
         }
     }
-    stopObservation(span.context);
+    error? stopped = trap stopObservation(span.context);
+    if stopped is error {
+        logTracingFailure("Failed to stop the delivery span", stopped);
+    }
 }
 
 isolated function extractTraceContext(storeapi:Message message) returns map<string> {
