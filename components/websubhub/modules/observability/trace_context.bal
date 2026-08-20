@@ -78,7 +78,7 @@ isolated function logTracingFailure(string message, error err) {
     log:printWarn(message, 'error = err);
 }
 
-isolated function openConsumeSpan(storeapi:Message message, decimal receiveDuration) returns ConsumeSpan?|error {
+isolated function openConsumeSpan(storeapi:Message message, decimal receiveDuration) returns ConsumeSpan|error? {
     map<string> traceContext = extractTraceContext(message);
     if traceContext.length() == 0 {
         return;
