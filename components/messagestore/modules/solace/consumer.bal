@@ -21,12 +21,16 @@ import xlibb/solace;
 
 const string ORIGINAL_SOLACE_MSG = "originalMessage";
 
+const string DESTINATION_ATTRIBUTE = "destination";
+const string URL_ATTRIBUTE = "url";
+
 isolated client class Consumer {
     *api:Consumer;
 
     private solace:MessageConsumer consumer;
     private final readonly & SolaceConsumerConfig config;
     private final string url;
+    private final string queueName;
     private final readonly & solace:ConsumerConfiguration solaceConsumerConfig;
 
     isolated function init(Config config, string queueName) returns error? {
@@ -46,6 +50,7 @@ isolated client class Consumer {
         self.consumer = check new (config.url, consumerConfig);
         self.config = config.consumer.cloneReadOnly();
         self.url = config.url;
+        self.queueName = queueName;
         self.solaceConsumerConfig = consumerConfig.cloneReadOnly();
     }
 
@@ -62,6 +67,11 @@ isolated client class Consumer {
             id: receivedMsg.applicationMessageId,
             payload: receivedMsg.payload
         };
+        map<string|string[]>? metadata = extractMessageMetadata(receivedMsg);
+        if metadata is map<string|string[]> {
+            message.metadata = metadata;
+        }
+        message.receiveAttributes = {[DESTINATION_ATTRIBUTE]: self.queueName, [URL_ATTRIBUTE]: self.url};
         message[ORIGINAL_SOLACE_MSG] = receivedMsg;
         return message;
     }
@@ -115,6 +125,20 @@ isolated client class Consumer {
             self.consumer = _consumer;
         }
     }
+}
+
+isolated function extractMessageMetadata(solace:Message msg) returns map<string|string[]>? {
+    map<anydata>? props = msg.properties;
+    if props is () {
+        return;
+    }
+    map<string|string[]> metadata = {};
+    foreach var [key, value] in props.entries() {
+        if value is string {
+            metadata[key] = value;
+        }
+    }
+    return metadata.length() > 0 ? metadata : ();
 }
 
 // todo: fix system queue consumer creation

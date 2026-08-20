@@ -22,6 +22,8 @@ public type Message record {
     byte[] payload;
     # The metadata associated with the message (e.g., Kafka message headers or JMS message properties)
     map<string|string[]> metadata?;
+    # Tracing attributes describing the broker-level receive that produced this message.
+    map<string> receiveAttributes?;
 };
 
 # Represents broker-specific metadata about a consumer as an opaque string map
