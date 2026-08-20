@@ -16,19 +16,15 @@
 
 import ballerina/jballerina.java;
 import ballerina/log;
+import ballerina/observe;
 
 import wso2/messagestore.api as storeapi;
 
 const string PROPERTY_TRACE_PROPERTIES = "_trace_properties_";
 const string PROPERTY_ERROR_VALUE = "_ballerina_error_value_";
-const string STAND_IN_TAG = "hub.span.stand_in";
 const string RECEIVE_DURATION_TAG = "hub.receive.duration_seconds";
 
-const string POLLING_TRACE_TAG = "hub.polling.trace_id";
-const string CONNECTOR_RECEIVE_SPAN_NAME = "xlibb/solace/MessageConsumer:receive";
-const string RECEIVE_SRC_MODULE = "wso2/messagestore.solace";
-const string RECEIVE_SRC_OBJECT = "xlibb/solace/MessageConsumer";
-const string RECEIVE_SRC_FUNCTION = "receive";
+const string DELIVERY_SPAN_NAME = "wso2/websubhub.delivery/consume";
 
 const string TRACEPARENT_FIELD = "traceparent";
 const string TRACESTATE_FIELD = "tracestate";
@@ -90,13 +86,11 @@ isolated function openConsumeSpan(storeapi:Message message, decimal receiveDurat
 
     handle previous = getObserverContext();
     handle context = newObserverContext();
-    setOperationName(context, java:fromString(CONNECTOR_RECEIVE_SPAN_NAME));
+    setOperationName(context, java:fromString(DELIVERY_SPAN_NAME));
     addProperty(context, java:fromString(PROPERTY_TRACE_PROPERTIES), carrier);
     if !java:isNull(previous) {
         setServiceName(context, getServiceName(previous));
-        tagPollingTrace(context, previous);
     }
-    addReceiveTags(context, previous, message, receiveDuration);
     setObserverContext(context);
     error? started = trap startObservation(context, true);
     if started is error {
@@ -107,44 +101,35 @@ isolated function openConsumeSpan(storeapi:Message message, decimal receiveDurat
         }
         return started;
     }
+    addDeliveryTags(previous, message, receiveDuration);
     return {context, previous};
 }
 
-isolated function addReceiveTags(handle context, handle previous, storeapi:Message message,
-        decimal receiveDuration) {
+isolated function addDeliveryTags(handle previous, storeapi:Message message, decimal receiveDuration) {
     map<string> attributes = message.receiveAttributes ?: {};
     foreach [string, string] [name, value] in attributes.entries() {
-        addTag(context, java:fromString(name), java:fromString(value));
+        addSpanTag(name, value);
     }
-    addTag(context, java:fromString("src.client.remote"), java:fromString("true"));
-    addTag(context, java:fromString("src.object.name"), java:fromString(RECEIVE_SRC_OBJECT));
-    addTag(context, java:fromString("src.function.name"), java:fromString(RECEIVE_SRC_FUNCTION));
-    string srcModule = RECEIVE_SRC_MODULE;
     if !java:isNull(previous) {
         string? entrypointModule = java:toString(getEntrypointFunctionModule(previous));
-        string? entrypointFunction = java:toString(getEntrypointFunctionName(previous));
         if entrypointModule is string {
-            addTag(context, java:fromString("entrypoint.function.module"), java:fromString(entrypointModule));
-            int? separator = entrypointModule.indexOf(":");
-            if separator is int {
-                srcModule += entrypointModule.substring(separator);
-            }
+            addSpanTag("entrypoint.function.module", entrypointModule);
         }
+        string? entrypointFunction = java:toString(getEntrypointFunctionName(previous));
         if entrypointFunction is string {
-            addTag(context, java:fromString("entrypoint.function.name"), java:fromString(entrypointFunction));
+            addSpanTag("entrypoint.function.name", entrypointFunction);
         }
     }
-    addTag(context, java:fromString("src.module"), java:fromString(srcModule));
-    addTag(context, java:fromString(RECEIVE_DURATION_TAG), java:fromString(receiveDuration.toString()));
-    addTag(context, java:fromString(STAND_IN_TAG), java:fromString("true"));
+    addSpanTag(RECEIVE_DURATION_TAG, receiveDuration.toString());
 }
 
-isolated function tagPollingTrace(handle context, handle previous) {
-    string? traceParent = java:toString(mapGet(getContextProperties(previous), java:fromString(TRACEPARENT_FIELD)));
-    if traceParent is string && traceParent.length() >= 35 {
-        addTag(context, java:fromString(POLLING_TRACE_TAG), java:fromString(traceParent.substring(3, 35)));
+isolated function addSpanTag(string name, string value) {
+    error? tagged = observe:addTagToSpan(name, value);
+    if tagged is error {
+        logTracingFailure("Failed to tag the delivery span with " + name, tagged);
     }
 }
+
 isolated function closeConsumeSpan(ConsumeSpan span, error? err) {
     if err is error {
         error? reported = trap reportError(err);
@@ -181,11 +166,6 @@ isolated function mapPut(handle target, handle key, handle value) returns handle
     'class: "java.util.Map"
 } external;
 
-isolated function mapGet(handle target, handle key) returns handle = @java:Method {
-    name: "get",
-    'class: "java.util.Map"
-} external;
-
 isolated function newObserverContext() returns handle = @java:Constructor {
     'class: "io.ballerina.runtime.observability.ObserverContext"
 } external;
@@ -202,11 +182,6 @@ isolated function reportError(error value) = @java:Method {
 
 isolated function setOperationName(handle context, handle name) = @java:Method {
     name: "setOperationName",
-    'class: "io.ballerina.runtime.observability.ObserverContext"
-} external;
-
-isolated function addTag(handle context, handle key, handle value) = @java:Method {
-    name: "addTag",
     'class: "io.ballerina.runtime.observability.ObserverContext"
 } external;
 
@@ -228,11 +203,6 @@ isolated function getEntrypointFunctionName(handle context) returns handle = @ja
 isolated function setServiceName(handle context, handle serviceName) = @java:Method {
     name: "setServiceName",
     'class: "io.ballerina.runtime.observability.ObserverContext"
-} external;
-
-isolated function getContextProperties(handle context) returns handle = @java:Method {
-    name: "getContextProperties",
-    'class: "io.ballerina.runtime.observability.ObserveUtils"
 } external;
 
 isolated function getObserverContext() returns handle = @java:Method {
