@@ -19,10 +19,24 @@ import ballerina/jwt;
 import ballerina/os;
 import ballerina/websubhub;
 
+# Represents a topic registration in the hub.
+#
+# This extends `websubhub:TopicRegistration`, which is a closed record and therefore cannot carry
+# hub-specific attributes, with the attributes the hub needs in order to distribute content
+# correctly. The record is deliberately open so that an external control plane can attach further
+# well-known, namespaced keys without changing this type or the message-store SPI, in the same way
+# the message-store modules read `solace.queue_name` and `consumerGroup` from the `meta` record.
+public type TopicRegistration record {
+    *websubhub:TopicRegistration;
+    # The content type used to deliver content published to this topic. When absent, the topic did
+    # not declare one and `DEFAULT_CONTENT_TYPE` applies.
+    string contentType?;
+};
+
 # Represents a snapshot of the WebSubHub's state, containing all topics and subscriptions.
 public type SystemStateSnapshot record {|
     # An array of current topic registrations in the hub
-    websubhub:TopicRegistration[] topics;
+    TopicRegistration[] topics;
     # An array of all verified subscriptions in the hub
     websubhub:VerifiedSubscription[] subscriptions;
 |};

@@ -17,10 +17,18 @@
 import ballerina/http;
 import ballerina/websubhub;
 
+# Represents a topic registration in the hub.
+#
+public type TopicRegistration record {
+    *websubhub:TopicRegistration;
+    # The content type used to deliver content published to this topic
+    string contentType?;
+};
+
 # Represents a snapshot of the WebSubHub's state, containing all topics and subscriptions.
 public type SystemStateSnapshot record {|
     # An array of current topic registrations in the hub
-    websubhub:TopicRegistration[] topics;
+    TopicRegistration[] topics;
     # An array of all verified subscriptions in the hub
     websubhub:VerifiedSubscription[] subscriptions;
 |};

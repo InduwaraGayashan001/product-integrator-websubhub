@@ -15,20 +15,24 @@
 // under the License.
 
 import websubhub.common;
+import websubhub.state;
 
-import ballerina/mime;
 import ballerina/websubhub;
 
 import wso2/messagestore.api as storeapi;
 
 # Constructs the content-distribution notification for a message consumed from the message store.
 #
+# The content type is resolved from the hub's replicated topic state rather than travelling with
+# the message, because message-store metadata does not round-trip on the supported brokers.
+#
+# + topic - The topic the message was published to
 # + message - The message consumed from the message store
 # + return - The notification to deliver to the subscriber, or an `error` if it cannot be built
-isolated function constructContentDistMsg(storeapi:Message message) returns websubhub:ContentDistributionMessage|error {
+isolated function constructContentDistMsg(string topic, storeapi:Message message) returns websubhub:ContentDistributionMessage|error {
     return {
         content: message.payload,
-        contentType: mime:APPLICATION_JSON,
+        contentType: state:getTopicContentType(topic),
         headers: constructDeliveryHeaders(message)
     };
 }

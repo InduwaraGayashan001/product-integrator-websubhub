@@ -22,10 +22,10 @@ import ballerina/websubhub;
 
 import wso2/messagestore.api as storeapi;
 
-type StateUpdateEvent websubhub:TopicRegistration|websubhub:TopicDeregistration|
+type StateUpdateEvent common:TopicRegistration|websubhub:TopicDeregistration|
     websubhub:VerifiedSubscription|websubhub:VerifiedUnsubscription|common:StaleSubscription;
 
-public isolated function addRegsiteredTopic(websubhub:TopicRegistration message) returns error? {
+public isolated function addRegsiteredTopic(common:TopicRegistration message) returns error? {
     check updateHubState(message);
 }
 

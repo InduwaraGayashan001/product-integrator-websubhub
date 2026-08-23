@@ -54,11 +54,12 @@ websubhub:Service hubService = @websubhub:ServiceConfig {
         if config:securityOn {
             check security:authorize(headers, ["register_topic"]);
         }
-        check self.registerTopic(message);
+        common:TopicRegistration topicRegistration = check buildTopicRegistration(message, headers);
+        check self.registerTopic(topicRegistration);
         return websubhub:TOPIC_REGISTRATION_SUCCESS;
     }
 
-    isolated function registerTopic(websubhub:TopicRegistration message) returns websubhub:TopicRegistrationError? {
+    isolated function registerTopic(common:TopicRegistration message) returns websubhub:TopicRegistrationError? {
         lock {
             if state:isTopicAvailable(message.topic) {
                 return error websubhub:TopicRegistrationError(
@@ -283,6 +284,33 @@ websubhub:Service hubService = @websubhub:ServiceConfig {
         }
     }
 };
+
+# Builds the hub's topic registration from the standard-library record and the registration request.
+#
+# The content type a topic declares arrives as a request header, because
+# `websubhub:TopicRegistration` is a closed record and the standard library discards every form
+# parameter of a registration request except `hub.topic`.
+#
+# + message - The topic registration parsed by the standard library
+# + headers - `http:Headers` of the original registration request
+# + return - The hub's topic registration, or a `websubhub:TopicRegistrationError` if the declared
+# content type is not one the hub is able to deliver
+isolated function buildTopicRegistration(websubhub:TopicRegistration message, http:Headers headers)
+        returns common:TopicRegistration|websubhub:TopicRegistrationError {
+    string|http:HeaderNotFoundError declaredContentType = headers.getHeader(common:TOPIC_CONTENT_TYPE_HEADER);
+    if declaredContentType is http:HeaderNotFoundError {
+        return {topic: message.topic, hubMode: message.hubMode};
+    }
+
+    string contentType = declaredContentType.trim().toLowerAscii();
+    if !common:isSupportedTopicContentType(contentType) {
+        string supported = string:'join(", ", ...common:SUPPORTED_TOPIC_CONTENT_TYPES);
+        string errorMessage = string `Content type [${contentType}] cannot be declared for a topic. ` +
+            string `Supported content types are: ${supported}`;
+        return error websubhub:TopicRegistrationError(errorMessage, statusCode = http:STATUS_BAD_REQUEST);
+    }
+    return {topic: message.topic, hubMode: message.hubMode, contentType: contentType};
+}
 
 isolated function getMessageId(http:Headers httpHeaders) returns string? {
     if !httpHeaders.hasHeader(common:MESSAGE_ID_HEADER) {
