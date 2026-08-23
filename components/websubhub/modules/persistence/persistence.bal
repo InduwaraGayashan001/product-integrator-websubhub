@@ -57,9 +57,28 @@ isolated function updateHubState(StateUpdateEvent message) returns error? {
 
 public isolated function addUpdateMessage(string topicName, websubhub:UpdateMessage message, map<string|string[]>? metadata = (), string? messageId = ())
     returns error? {
-    json jsonData = <json>message.content;
-    byte[] payload = jsonData.toJsonString().toBytes();
+    byte[] payload = serializeContent(message.content);
     check produceMessage(topicName, payload, metadata, messageId);
+}
+
+# Serializes published content into the bytes stored in the message store.
+#
+# + content - The content of the published update message
+# + return - The bytes to store for this message
+isolated function serializeContent(string|byte[]|json|xml? content) returns byte[] {
+    // `byte[]` is tested before the `json` fall-through because `byte[]` is a subtype of `json`.
+    if content is byte[] {
+        return content;
+    }
+    if content is string {
+        return content.toBytes();
+    }
+    if content is xml {
+        return content.toString().toBytes();
+    }
+    // `json`, which also covers the `map<string>` produced for `application/x-www-form-urlencoded`
+    // and the nil carried by an event notification, which serializes to `null`.
+    return content.toJsonString().toBytes();
 }
 
 isolated function produceMessage(string topic, byte[] payload, map<string|string[]>? metadata = (), string? messageId = ()) returns error? {
