@@ -14,6 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import websubhub.common;
+
 import ballerina/lang.value;
 import ballerina/mime;
 import ballerina/websubhub;
@@ -31,18 +33,25 @@ isolated function constructContentDistMsg(storeapi:Message message) returns webs
     return distributionMsg;
 }
 
+# Derives the headers to send with a content-delivery request.
+#
+# + message - The message consumed from the message store
+# + return - The headers to include in the content-delivery request, or `()` if there are none
 isolated function constructDeliveryHeaders(storeapi:Message message) returns map<string|string[]>? {
-    string? messageId = message.id;
-    if messageId is () {
-        return message.metadata;
+    map<string|string[]> deliveryHeaders = {};
+    map<string|string[]>? metadata = message.metadata;
+    if metadata is map<string|string[]> {
+        foreach var [headerName, headerValue] in metadata.entries() {
+            if common:isDeniedMetadataHeader(headerName) {
+                continue;
+            }
+            deliveryHeaders[headerName] = headerValue;
+        }
     }
 
-    map<string|string[]>? metadata = message.metadata;
-    if metadata is () {
-        return {
-            "x-hub-messageId": messageId
-        };
+    string? messageId = message.id;
+    if messageId is string {
+        deliveryHeaders[common:MESSAGE_ID_HEADER] = messageId;
     }
-    metadata["x-hub-messageId"] = messageId;
-    return metadata;
+    return deliveryHeaders.length() == 0 ? () : deliveryHeaders;
 }

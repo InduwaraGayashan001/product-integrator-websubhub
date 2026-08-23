@@ -26,8 +26,6 @@ import ballerina/log;
 import ballerina/time;
 import ballerina/websubhub;
 
-const MESSAGE_ID_HEADER = "x-hub-messageId";
-
 http:Service healthCheckService = service object {
     resource function get .() returns http:Ok {
         return {
@@ -287,11 +285,11 @@ websubhub:Service hubService = @websubhub:ServiceConfig {
 };
 
 isolated function getMessageId(http:Headers httpHeaders) returns string? {
-    if !httpHeaders.hasHeader(MESSAGE_ID_HEADER) {
+    if !httpHeaders.hasHeader(common:MESSAGE_ID_HEADER) {
         return;
     }
 
-    var msgId = httpHeaders.getHeader(MESSAGE_ID_HEADER);
+    var msgId = httpHeaders.getHeader(common:MESSAGE_ID_HEADER);
     // safe to ingore the error as here we are retrieving only the available headers
     if msgId is error {
         return;
@@ -302,8 +300,10 @@ isolated function getMessageId(http:Headers httpHeaders) returns string? {
 isolated function getMetadata(http:Headers httpHeaders) returns map<string[]> {
     map<string[]> headers = {};
     foreach string headerName in httpHeaders.getHeaderNames() {
-        // exclude the messageId header as it will be dealt with separately
-        if headerName == MESSAGE_ID_HEADER {
+        // Exclude credential-bearing and hop-by-hop headers, which describe the publisher's request
+        // and must not be replayed to subscribers, along with the messageId header, which is dealt
+        // with separately.
+        if common:isDeniedMetadataHeader(headerName) {
             continue;
         }
         var headerValues = httpHeaders.getHeaders(headerName);
