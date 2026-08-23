@@ -267,23 +267,64 @@ websubhub:Service hubService = @websubhub:ServiceConfig {
     }
 
     isolated function updateMessage(websubhub:UpdateMessage msg, http:Headers headers) returns websubhub:UpdateMessageError? {
-        if state:isTopicAvailable(msg.hubTopic) {
-            string? messageId = getMessageId(headers);
-            map<string[]> metadata = getMetadata(headers);
-            error? errorResponse = persist:addUpdateMessage(msg.hubTopic, msg, metadata, messageId);
-            if errorResponse is websubhub:UpdateMessageError {
-                return errorResponse;
-            } else if errorResponse is error {
-                common:logRecoverableError("Error occurred while publishing the content ", errorResponse);
-                return error websubhub:UpdateMessageError(
-                    errorResponse.message(), statusCode = http:STATUS_INTERNAL_SERVER_ERROR);
-            }
-        } else {
+        common:TopicRegistration? topicRegistration = state:getTopic(msg.hubTopic);
+        if topicRegistration is () {
             return error websubhub:UpdateMessageError(
                 "Topic [" + msg.hubTopic + "] is not registered with the Hub", statusCode = http:STATUS_NOT_FOUND);
         }
+
+        check validateContentType(msg, topicRegistration);
+
+        string? messageId = getMessageId(headers);
+        map<string[]> metadata = getMetadata(headers);
+        error? errorResponse = persist:addUpdateMessage(msg.hubTopic, msg, metadata, messageId);
+        if errorResponse is websubhub:UpdateMessageError {
+            return errorResponse;
+        } else if errorResponse is error {
+            common:logRecoverableError("Error occurred while publishing the content ", errorResponse);
+            return error websubhub:UpdateMessageError(
+                errorResponse.message(), statusCode = http:STATUS_INTERNAL_SERVER_ERROR);
+        }
     }
 };
+
+# Verifies that published content matches the content type declared for its topic.
+#
+# A topic-level declaration is an unverified claim made by the topic owner. Without this check the
+# hub would label delivered content with a content type that does not describe the bytes behind it.
+#
+# + msg - The published content-update message
+# + topicRegistration - The registration of the topic being published to
+# + return - A `websubhub:UpdateMessageError` if the content contradicts the topic's declaration and
+# strict content-type validation is enabled
+isolated function validateContentType(websubhub:UpdateMessage msg, common:TopicRegistration topicRegistration)
+        returns websubhub:UpdateMessageError? {
+    string declaredContentType = topicRegistration?.contentType ?: common:DEFAULT_CONTENT_TYPE;
+
+    // An event notification carries no content, so its content type describes the notification
+    // request rather than a payload. The hub stores a JSON `null` for it, which is only a valid
+    // body while the topic delivers JSON.
+    if msg.msgType == websubhub:EVENT {
+        if declaredContentType == common:DEFAULT_CONTENT_TYPE {
+            return;
+        }
+        string eventErrorMessage = string `Topic [${msg.hubTopic}] delivers content as ` +
+            string `[${declaredContentType}], which cannot represent a content-free event notification`;
+        return error websubhub:UpdateMessageError(eventErrorMessage, statusCode = http:STATUS_UNSUPPORTED_MEDIA_TYPE);
+    }
+
+    if msg.contentType == declaredContentType {
+        return;
+    }
+
+    string errorMessage = string `Content type [${msg.contentType}] does not match the content type ` +
+        string `[${declaredContentType}] declared for topic [${msg.hubTopic}]`;
+    if !config:server.strictContentTypeValidation {
+        log:printWarn(errorMessage, topic = msg.hubTopic, serverId = config:serverId);
+        return;
+    }
+    return error websubhub:UpdateMessageError(errorMessage, statusCode = http:STATUS_UNSUPPORTED_MEDIA_TYPE);
+}
 
 # Builds the hub's topic registration from the standard-library record and the registration request.
 #

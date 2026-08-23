@@ -63,6 +63,10 @@ public type ServerConfig record {|
     JwtValidatorConfig auth?;
     # SSL/TLS configurations for the service endpoint
     http:ListenerSecureSocket secureSocket?;
+    # When `true`, a publish whose `Content-Type` does not match the content type declared for the
+    # topic is rejected with `415 Unsupported Media Type`. When `false`, the mismatch is logged and
+    # the content is still delivered using the topic's declared content type.
+    boolean strictContentTypeValidation = true;
 |};
 
 # Represents JWT validator configurations for JWT-based authentication.
