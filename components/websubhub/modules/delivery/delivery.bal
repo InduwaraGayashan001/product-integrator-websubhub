@@ -145,19 +145,20 @@ isolated function initDispatchResourcesWithRetry(websubhub:VerifiedSubscription 
         returns [storeapi:Consumer, storeapi:ConsumerMetadata, Dispatcher]? {
     int maxRetries = getStartRetries();
     int retries = 0;
-    while true {
-        if !isValidConsumer(subscription.hubTopic, subscriberId) {
-            return;
-        }
+    while isValidConsumer(subscription.hubTopic, subscriberId) {
         [storeapi:Consumer, storeapi:ConsumerMetadata, Dispatcher]|error result = initDispatchResources(subscription);
         if result !is error {
             return result;
         }
         if retries >= maxRetries {
-            common:logRecoverableError(
-                    "Failed to start the content delivery for the subscription, hence marking it as stale", result,
-                    topic = subscription.hubTopic, callback = subscription.hubCallback, attempts = retries + 1);
-            markSubscriptionAsStale(subscription);
+            // The subscription may have been removed while the attempt was in progress, in which case marking it as
+            // stale would add it back
+            if isValidConsumer(subscription.hubTopic, subscriberId) {
+                common:logRecoverableError(
+                        "Failed to start the content delivery for the subscription, hence marking it as stale", result,
+                        topic = subscription.hubTopic, callback = subscription.hubCallback, attempts = retries + 1);
+                markSubscriptionAsStale(subscription);
+            }
             return;
         }
         retries += 1;
