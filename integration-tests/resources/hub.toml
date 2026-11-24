@@ -40,6 +40,8 @@ redeliver.maxCount = 10
 
 [websubhub.config.delivery]
 timeout = 30.0
+# Leaves the tests time to let a failing start of the content delivery recover before the retries are exhausted
+startRetries = 10
 
 [websubhub.config.delivery.retry]
 count = 3

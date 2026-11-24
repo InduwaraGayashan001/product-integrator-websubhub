@@ -52,6 +52,8 @@ def brokerSmfPort = itProperty('brokerSmfPort', 55580)
 def brokerSempPort = itProperty('brokerSempPort', 18580)
 def consolidatorPort = itProperty('consolidatorPort', 10580)
 def hubPort = itProperty('hubPort', 9580)
+// The port of the second hub, which does not retry starting the content delivery of a subscription
+def noRetriesHubPort = itProperty('noRetriesHubPort', 9581)
 def subscriberPort = itProperty('subscriberPort', 9590)
 def brokerRestPort = itProperty('brokerRestPort', 9680)
 def jaegerQueryPort = itProperty('jaegerQueryPort', 16680)
@@ -331,6 +333,7 @@ tasks.register('prepareTestConfigs', Copy) {
                     .replace('@broker.semp.port@', "${brokerSempPort}")
                     .replace('@consolidator.port@', "${consolidatorPort}")
                     .replace('@hub.port@', "${hubPort}")
+                    .replace('@no.retries.hub.port@', "${noRetriesHubPort}")
                     .replace('@subscriber.port@', "${subscriberPort}")
                     .replace('@broker.rest.port@', "${brokerRestPort}")
                     .replace('@jaeger.query.port@', "${jaegerQueryPort}")
@@ -430,15 +433,28 @@ tasks.register('startConsolidator') {
     }
 }
 
+def launchHub = { String name, String configFile ->
+    startComponent(name, hubJar, new File(confDir, configFile))
+    File hubLog = new File(logsDir, "${name}.log")
+    waitUntil("the ${name} to be ready", startupTimeoutSeconds) {
+        ensureRunning(name)
+        hubLog.exists() && hubLog.text.contains('Websubhub service started successfully')
+    }
+}
+
 tasks.register('startHub') {
     dependsOn 'startConsolidator'
     doLast {
-        startComponent('hub', hubJar, new File(confDir, 'hub.toml'))
-        File hubLog = new File(logsDir, 'hub.log')
-        waitUntil('the hub to be ready', startupTimeoutSeconds) {
-            ensureRunning('hub')
-            hubLog.exists() && hubLog.text.contains('Websubhub service started successfully')
-        }
+        launchHub('hub', 'hub.toml')
+    }
+}
+
+// A second node of the deployment, which does not retry starting the content delivery of a subscription
+tasks.register('startNoRetriesHub') {
+    dependsOn 'startConsolidator'
+    mustRunAfter 'startHub'
+    doLast {
+        launchHub('no-retries-hub', 'hub-no-retries.toml')
     }
 }
 
@@ -448,7 +464,7 @@ tasks.register('stopTestEnvironment') {
         // before the consolidator, and the components before the broker
         stopControlServer()
         List<String> leaked = []
-        ['hub', 'consolidator'].each { String name ->
+        ['hub', 'no-retries-hub', 'consolidator'].each { String name ->
             Process process = componentProcesses[name]
             if (stopComponent(name)) {
                 componentProcesses.remove(name)
@@ -475,7 +491,7 @@ tasks.register('test', Exec) {
     description = 'Runs the WebSubHub integration tests.'
     group = 'verification'
     onlyIf { !project.hasProperty('skipIntegrationTests') }
-    dependsOn 'startHub'
+    dependsOn 'startHub', 'startNoRetriesHub'
     mustRunAfter ':websubhub-workspace:build'
 
     workingDir testPackageDir
@@ -504,6 +520,7 @@ tasks.register('test', Exec) {
                 "${results?.skipped ?: 0} skipped")
         if (executionResult.get().exitValue != 0 || results == null || total == 0 || failed > 0) {
             logger.error("Hub logs:${System.lineSeparator()}${logTail('hub')}")
+            logger.error("No-retries hub logs:${System.lineSeparator()}${logTail('no-retries-hub')}")
             logger.error("Consolidator logs:${System.lineSeparator()}${logTail('consolidator')}")
             throw new GradleException("The integration tests failed. Test report: ${testPackageDir}/target/report, " +
                     "component logs: ${logsDir}")
@@ -512,12 +529,12 @@ tasks.register('test', Exec) {
 }
 
 // Tear down the environment whether the tests pass, fail, or the environment fails to start
-['startBroker', 'startConsolidator', 'startHub', 'test'].each { String name ->
+['startBroker', 'startConsolidator', 'startHub', 'startNoRetriesHub', 'test'].each { String name ->
     tasks.named(name) { finalizedBy 'stopTestEnvironment' }
 }
 tasks.named('stopTestEnvironment') { mustRunAfter 'test' }
 
-['prepareTestConfigs', 'startBroker', 'startConsolidator', 'startHub', 'stopTestEnvironment'].each { String name ->
+['prepareTestConfigs', 'startBroker', 'startConsolidator', 'startHub', 'startNoRetriesHub', 'stopTestEnvironment'].each { String name ->
     tasks.named(name) {
         onlyIf { !project.hasProperty('skipIntegrationTests') }
         mustRunAfter ':websubhub-workspace:build'

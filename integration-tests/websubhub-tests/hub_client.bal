@@ -20,6 +20,8 @@ import ballerina/url;
 
 # The URL of the hub under test, e.g. `http://localhost:9580`
 public configurable string hubUrl = ?;
+# The URL of a second hub, which does not retry starting the content delivery of a subscription
+public configurable string noRetriesHubUrl = ?;
 # The URL of the consolidator under test, e.g. `http://localhost:10580`
 public configurable string consolidatorUrl = ?;
 # The port on which the test subscriber receives intent verification and content delivery requests
@@ -28,6 +30,7 @@ public configurable int subscriberPort = ?;
 public configurable decimal eventualTimeout = 60;
 
 final http:Client hubClient = check new (hubUrl);
+final http:Client noRetriesHubClient = check new (noRetriesHubUrl);
 final http:Client consolidatorClient = check new (consolidatorUrl);
 
 # The header with which a publisher declares the content type of a topic at registration.
@@ -67,13 +70,19 @@ public isolated function deregisterTopic(string topic) returns http:Response|err
 # + topic - The topic to subscribe to
 # + callback - The callback URL of the subscriber
 # + secret - The secret used by the hub to sign the content delivered to the subscriber
+# + extraParams - Further parameters of the subscription, which the hub passes on to the message store
+# + hub - The hub to subscribe through
 # + return - The response of the hub, or an `error` if the request fails
-public isolated function subscribe(string topic, string callback, string? secret = ()) returns http:Response|error {
-    map<string> params = {"hub.mode": "subscribe", "hub.topic": topic, "hub.callback": callback};
+public isolated function subscribe(string topic, string callback, string? secret = (), map<string> extraParams = {},
+        http:Client hub = hubClient) returns http:Response|error {
+    map<string> params = extraParams.clone();
+    params["hub.mode"] = "subscribe";
+    params["hub.topic"] = topic;
+    params["hub.callback"] = callback;
     if secret is string {
         params["hub.secret"] = secret;
     }
-    return sendHubRequest(params);
+    return sendHubRequest(params, hub = hub);
 }
 
 # Unsubscribes a callback from a topic.
@@ -90,15 +99,17 @@ public isolated function unsubscribe(string topic, string callback) returns http
 # + topic - The topic to publish to
 # + content - The content to publish
 # + traceParent - The `traceparent` header of the publisher, if the publish is to be made under a known trace
+# + hub - The hub to publish through
 # + return - The response of the hub, or an `error` if the request fails
-public isolated function publish(string topic, json content, string? traceParent = ()) returns http:Response|error {
+public isolated function publish(string topic, json content, string? traceParent = (), http:Client hub = hubClient)
+        returns http:Response|error {
     string path = string `/hub?hub.mode=publish&hub.topic=${check url:encode(topic, "UTF-8")}`;
     http:Request request = new;
     request.setJsonPayload(content);
     if traceParent is string {
         request.setHeader("traceparent", traceParent);
     }
-    return hubClient->post(path, request);
+    return hub->post(path, request);
 }
 
 # Publishes content of an arbitrary content type to a topic.
@@ -187,7 +198,8 @@ public isolated function waitUntil(isolated function () returns boolean|error co
 # + return - The callback URL
 public isolated function callbackUrl(string id) returns string => string `http://localhost:${subscriberPort}/callback/${id}`;
 
-isolated function sendHubRequest(map<string> params, map<string> headers = {}) returns http:Response|error {
+isolated function sendHubRequest(map<string> params, map<string> headers = {}, http:Client hub = hubClient)
+        returns http:Response|error {
     string[] fields = [];
     foreach [string, string] [name, value] in params.entries() {
         fields.push(string `${name}=${check url:encode(value, "UTF-8")}`);
@@ -197,5 +209,5 @@ isolated function sendHubRequest(map<string> params, map<string> headers = {}) r
     foreach [string, string] [name, value] in headers.entries() {
         request.setHeader(name, value);
     }
-    return hubClient->post("/hub", request);
+    return hub->post("/hub", request);
 }

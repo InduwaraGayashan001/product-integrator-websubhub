@@ -3,6 +3,8 @@
 
 [websubhub.integration.tests]
 hubUrl = "http://localhost:@hub.port@"
+# The second hub, which does not retry starting the content delivery of a subscription
+noRetriesHubUrl = "http://localhost:@no.retries.hub.port@"
 consolidatorUrl = "http://localhost:@consolidator.port@"
 subscriberPort = @subscriber.port@
 
